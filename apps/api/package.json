@@ -4,6 +4,9 @@
   "private": true,
   "description": "NestJS REST API for the electronics e-commerce platform",
   "type": "module",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "nest build",
     "dev": "nest start --watch --preserveWatchOutput",

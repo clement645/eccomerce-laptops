@@ -1,0 +1,20 @@
+{
+  "name": "@repo/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser journeys, accessibility, Lighthouse and load checks against a running stack",
+  "type": "module",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "lighthouse": "node scripts/lighthouse.mjs",
+    "load": "node scripts/load.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.64.1",
+    "chrome-launcher": "1.2.2",
+    "lighthouse": "13.6.0",
+    "typescript": "6.0.3"
+  }
+}

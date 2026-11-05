@@ -1,0 +1,28 @@
+node_modules/
+dist/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+.netlify/
+playwright-report/
+test-results/
+
+.env
+.env.*
+!.env.example
+
+.DS_Store
+*.log
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Prisma generated client
+packages/database/src/generated/
+
+# Local archives (e.g. project backups)
+*.zip
+
+# Production secrets for pasting into hosting dashboards. Never committed.
+.secrets/

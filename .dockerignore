@@ -1,0 +1,22 @@
+# Secrets and local state never enter an image.
+**/.env
+**/.env.*
+!**/.env.example
+**/.auth
+*.zip
+
+# Rebuilt inside the image
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/coverage
+**/playwright-report
+**/test-results
+tests/e2e/reports
+
+.git
+.github
+.vscode
+*.log
+.secrets

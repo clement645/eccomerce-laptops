@@ -1,0 +1,51 @@
+# Local development dependencies only. Production uses Neon, managed Redis, and Cloudflare R2.
+name: electronics-commerce
+
+services:
+  postgres:
+    image: postgres:18-alpine # matches Neon (PostgreSQL 18)
+    environment:
+      POSTGRES_USER: ecommerce
+      POSTGRES_PASSWORD: ecommerce
+      POSTGRES_DB: ecommerce
+    # Host port 5442 avoids clashing with a locally installed PostgreSQL. Override with POSTGRES_PORT.
+    ports: ['127.0.0.1:${POSTGRES_PORT:-5442}:5432']
+    volumes:
+      - postgres-data:/var/lib/postgresql # PG 18 images store data under a versioned subdirectory
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ecommerce -d ecommerce']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+    ports: ['127.0.0.1:${REDIS_PORT:-6379}:6379']
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # S3-compatible stand-in for Cloudflare R2 (MinIO no longer publishes public images).
+  object-storage:
+    image: rustfs/rustfs:1.0.4
+    environment:
+      RUSTFS_ACCESS_KEY: devaccesskey
+      RUSTFS_SECRET_KEY: devsecretkey
+      RUSTFS_CONSOLE_ENABLE: 'true'
+    ports: ['127.0.0.1:9000:9000', '127.0.0.1:9001:9001']
+    volumes: [object-storage-data:/data]
+
+  # Catches all outgoing email locally. UI at http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:latest
+    ports: ['127.0.0.1:1025:1025', '127.0.0.1:8025:8025']
+
+volumes:
+  postgres-data:
+  redis-data:
+  object-storage-data:

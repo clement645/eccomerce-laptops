@@ -1,0 +1,46 @@
+import { Module, type DynamicModule } from '@nestjs/common';
+import type { ApiEnv } from '@repo/configuration';
+import { LoggerModule } from 'nestjs-pino';
+import { AppConfigModule } from './config/config.module.js';
+import { CacheModule } from './infrastructure/cache/cache.module.js';
+import { MailModule } from './infrastructure/mail/mail.module.js';
+import { MediaModule } from './infrastructure/media/media.module.js';
+import { PrismaModule } from './infrastructure/prisma/prisma.module.js';
+import { RedisModule } from './infrastructure/redis/redis.module.js';
+import { RevalidationModule } from './infrastructure/revalidation/revalidation.module.js';
+import { EmailWorker } from './jobs/email.worker.js';
+import { MaintenanceWorker } from './jobs/maintenance.worker.js';
+import { BlogCoreModule } from './modules/blog/blog-core.module.js';
+import { OrdersCoreModule } from './modules/orders/orders-core.module.js';
+import { PaymentsCoreModule } from './modules/payments/payments-core.module.js';
+
+/** Background process: no HTTP server, only queue consumers. */
+@Module({})
+export class WorkerModule {
+  static forRoot(env: ApiEnv): DynamicModule {
+    return {
+      module: WorkerModule,
+      imports: [
+        AppConfigModule.forRoot(env),
+        LoggerModule.forRoot({
+          pinoHttp: {
+            level: env.LOG_LEVEL,
+            ...(env.NODE_ENV === 'development'
+              ? { transport: { target: 'pino-pretty', options: { singleLine: true } } }
+              : {}),
+          },
+        }),
+        PrismaModule,
+        RedisModule,
+        CacheModule,
+        MediaModule,
+        RevalidationModule,
+        MailModule,
+        OrdersCoreModule,
+        PaymentsCoreModule,
+        BlogCoreModule,
+      ],
+      providers: [MaintenanceWorker, EmailWorker],
+    };
+  }
+}

@@ -1,0 +1,7 @@
+# Storefront on Netlify (Next.js runtime). Paths are relative to the repository root.
+[build]
+  command = "pnpm --filter @repo/storefront... build"
+  publish = "apps/storefront/.next"
+
+[build.environment]
+  NODE_VERSION = "24"

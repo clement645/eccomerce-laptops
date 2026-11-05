@@ -1,0 +1,44 @@
+{
+  "name": "@repo/database",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Prisma schema, migrations, seed data and generated client",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "prisma"
+  ],
+  "scripts": {
+    "generate": "prisma generate",
+    "build": "prisma generate && tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "typecheck": "prisma generate && tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "migrate:create": "DB_TARGET=local prisma migrate dev --create-only",
+    "migrate:dev": "DB_TARGET=local prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "migrate:deploy:local": "DB_TARGET=local prisma migrate deploy",
+    "migrate:deploy:test": "DB_TARGET=test prisma migrate deploy",
+    "migrate:status": "prisma migrate status",
+    "seed": "prisma db seed",
+    "seed:local": "DB_TARGET=local prisma db seed",
+    "studio": "prisma studio"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
+    "@repo/shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "prisma": "7.10.1",
+    "tsx": "4.23.15",
+    "vitest": "5.0.5"
+  }
+}

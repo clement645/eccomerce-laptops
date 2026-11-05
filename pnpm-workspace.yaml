@@ -1,0 +1,29 @@
+packages:
+  - apps/*
+  - packages/*
+  - tests/*
+
+minimumReleaseAgeExclude:
+  - '@nestjs/common@12.3.2'
+  - '@nestjs/core@12.3.2'
+  - '@nestjs/platform-express@12.3.2'
+  - '@nestjs/swagger@12.0.5'
+  - '@nestjs/cli@12.0.11'
+  - '@nestjs/testing@12.3.2'
+  - lucide-react@1.62.0
+  - jose@6.2.14
+  - nodemailer@10.3.0
+
+saveExact: true
+
+# Dependency install scripts are denied unless explicitly allowed here.
+allowBuilds:
+  # Optional native speed-up for BullMQ; the pure-JS fallback is used instead.
+  msgpackr-extract: false
+  '@scarf/scarf': false
+  unrs-resolver: false
+  vue-demi: true
+  '@prisma/engines': true
+  prisma: true
+  esbuild: true
+  argon2: true

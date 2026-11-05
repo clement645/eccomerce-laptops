@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    # Integration tests run against throwaway service containers, never Neon.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: ecommerce
+          POSTGRES_PASSWORD: ecommerce
+          POSTGRES_DB: ecommerce_test
+        ports: ['5442:5432']
+        options: >-
+          --health-cmd "pg_isready -U ecommerce -d ecommerce_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      object-storage:
+        image: rustfs/rustfs:1.0.4
+        env:
+          RUSTFS_ACCESS_KEY: devaccesskey
+          RUSTFS_SECRET_KEY: devsecretkey
+        ports: ['9000:9000']
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+
+    env:
+      # Non-secret values needed to build and test.
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+      NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1
+      VITE_API_URL: http://localhost:4000/api/v1
+      TEST_DATABASE_URL: postgresql://ecommerce:ecommerce@localhost:5442/ecommerce_test
+      TEST_REDIS_URL: redis://localhost:6379/15
+      # Prisma needs a URL to generate its client; CI never connects to a real database with it.
+      DATABASE_URL: postgresql://build:build@localhost:5432/build
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build

@@ -5,15 +5,15 @@ Things to know before going live, grouped by what they block. Security residual 
 
 ## Must do before launch
 
-1. **Production database.**
-   - Neon was unreachable from the development machine, so all work since Phase 6 used local Postgres.
-   - The Neon password was shared in chat; rotate it.
-   - Then apply every migration with `pnpm db:migrate:deploy` (Phase 11).
+1. **Rotate every credential shared in chat:** Neon, Upstash, R2 keys and the Cloudflare API token. See [DEPLOYMENT.md](./DEPLOYMENT.md#rotating-credentials). Migrations are applied to Neon.
+   - Neon still holds the **demo catalog** from Phase 2 (22 products, 5 posts). Archive it before real customers arrive.
 2. **Real M-Pesa** has only been tested against a fake Daraja and the simulated provider.
    - It needs a run in the Daraja sandbox (credentials, an https callback).
    - Production also needs Safaricom go-live and `PAYMENTS_LIVE_APPROVED=true` with the owner's sign-off.
 3. **Policy pages are missing.** Delivery information, Returns & warranty and Privacy policy are linked from the footer but return 404. They need the store's own terms; they shouldn't be invented.
-4. **Email deliverability:** SPF, DKIM and DMARC for the sending domain, and a production SMTP provider (Phase 11).
+4. **No email provider is configured in production yet.** Account confirmation, password reset and order emails are retried by the worker and then dropped. Add `SMTP_*` and `MAIL_FROM` in Render, plus SPF, DKIM and DMARC for the sending domain.
+   - **No payment method is switched on in production:** M-Pesa needs Daraja credentials, and cash on delivery is off in Store settings, so the live site can't take orders yet.
+   - **The API is on Render's free plan,** which sleeps when idle (a slow first request). The worker needs the paid Starter plan. The Upstash free tier can run out of commands because BullMQ polls constantly; use pay-as-you-go.
 
 ## Should fix soon after launch
 

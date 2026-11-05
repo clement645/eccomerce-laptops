@@ -2,7 +2,7 @@
 
 A premium electronics e-commerce platform for the Kenyan market: a Next.js storefront, a Vue admin dashboard, and a NestJS API on PostgreSQL (Neon), Redis, and Cloudflare R2.
 
-**Status:** Phase 10 (hardening) complete: release candidate. See [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md), [docs/SECURITY-REVIEW.md](docs/SECURITY-REVIEW.md), [docs/TESTING.md](docs/TESTING.md) and [docs/ROADMAP.md](docs/ROADMAP.md).
+**Status:** Phase 11: deployed (storefront https://eccomerce-laptops.netlify.app, admin https://eccomerce-laptops-admin.netlify.app; API on Render, see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)). Release candidate: See [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md), [docs/SECURITY-REVIEW.md](docs/SECURITY-REVIEW.md), [docs/TESTING.md](docs/TESTING.md) and [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Repository layout
 

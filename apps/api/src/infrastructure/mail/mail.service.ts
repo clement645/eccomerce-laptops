@@ -6,6 +6,7 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import type { ApiEnv } from '@repo/configuration';
+import { createHash } from 'node:crypto';
 import { Queue } from 'bullmq';
 import nodemailer, { type Transporter } from 'nodemailer';
 import { API_ENV } from '../../config/env.js';
@@ -21,6 +22,11 @@ export interface MailMessage {
 }
 
 export const EMAIL_QUEUE = 'email';
+
+/** Deterministic job id from recipient and content (emails with one-time links are never equal). */
+export function emailJobId(message: MailMessage): string {
+  return `mail-${createHash('sha256').update(`${message.to}\n${message.subject}\n${message.text}`).digest('hex').slice(0, 40)}`;
+}
 export const SEND_EMAIL = 'send-email';
 
 /**
@@ -76,10 +82,13 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
       try {
         await Promise.race([
           this.queue.add(SEND_EMAIL, message, {
+            // Same recipient and content = same job: a repeated request can't queue it twice.
+            jobId: emailJobId(message),
             attempts: 6,
             backoff: { type: 'exponential', delay: 10_000 },
-            removeOnComplete: 500,
-            removeOnFail: 1_000,
+            // Kept a day so the id keeps deduplicating, then removed to bound Redis memory.
+            removeOnComplete: { age: 24 * 60 * 60, count: 1_000 },
+            removeOnFail: { age: 7 * 24 * 60 * 60, count: 1_000 },
           }),
           new Promise((_, reject) => setTimeout(() => reject(new Error('queue timeout')), 3_000)),
         ]);

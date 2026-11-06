@@ -11,7 +11,7 @@
     "build:packages": "pnpm --filter \"./packages/**\" -r build",
     "dev:packages": "pnpm --filter \"./packages/**\" -r --parallel dev",
     "predev": "pnpm build:packages",
-    "dev": "pnpm --filter @repo/api --filter @repo/storefront --filter @repo/admin --parallel run \"/^dev(:worker)?$/\"",
+    "dev": "pnpm --filter @repo/api --filter @repo/storefront --filter @repo/admin --parallel run dev",
     "dev:api": "pnpm build:packages && pnpm --filter @repo/api dev",
     "dev:storefront": "pnpm build:packages && pnpm --filter @repo/storefront dev",
     "dev:admin": "pnpm build:packages && pnpm --filter @repo/admin dev",

@@ -28,6 +28,17 @@ export interface HealthResponse {
   uptimeSeconds: number;
   timestamp: string;
   checks: Record<string, DependencyStatus>;
+  /** Background work in this process (email consumer and maintenance sweeps). */
+  jobs?: BackgroundJobsHealth;
+}
+
+export interface BackgroundJobsHealth {
+  /** inline: run by the API itself; external: by a separate worker; disabled: not run. */
+  mode: 'inline' | 'external' | 'disabled';
+  emailConsumer: 'running' | 'off';
+  /** The pass run at startup (e.g. after Render wakes the service). */
+  catchUp: { at: string; durationMs: number; finished: boolean } | null;
+  sweeps: Record<string, { lastRunAt: string; durationMs: number; ok: boolean; detail?: string }>;
 }
 
 /** Validation error details returned with code VALIDATION_FAILED. */

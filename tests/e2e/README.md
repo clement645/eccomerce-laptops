@@ -7,9 +7,8 @@ pnpm docker:up
 pnpm build
 pnpm --filter @repo/api storage:init        # once
 
-# API with simulated M-Pesa (PAYMENTS_SIMULATED=true in apps/api/.env), the worker, and production frontends
+# API with simulated M-Pesa (PAYMENTS_SIMULATED=true in apps/api/.env; it runs its own background jobs) and production frontends
 cd apps/api && node --env-file=.env dist/main.js &
-cd apps/api && node --env-file=.env dist/worker.js &
 cd apps/storefront && npx next start -p 3000 &
 cd apps/admin && npx vite preview --port 5173 &
 ```

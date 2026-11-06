@@ -52,17 +52,17 @@ pnpm dev              # builds shared packages, then starts all three apps
 
 ## Scripts (run from the repo root)
 
-| Command                                                                           | What it does                                                                          |
-| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `pnpm dev`                                                                        | Build packages, then run the API, background worker, storefront and admin in parallel |
-| `pnpm dev:worker`                                                                 | Run only the background worker (releases stock for unpaid orders)                     |
-| `pnpm --filter @repo/api admin:create --email you@example.com --name "Your Name"` | Create the first administrator (two-factor is set up at first sign-in)                |
-| `pnpm dev:api` / `dev:storefront` / `dev:admin`                                   | Run one app                                                                           |
-| `pnpm dev:packages`                                                               | Rebuild shared packages on change                                                     |
-| `pnpm build`                                                                      | Production build of everything                                                        |
-| `pnpm lint` / `pnpm format:check`                                                 | ESLint / Prettier                                                                     |
-| `pnpm typecheck`                                                                  | Type-check every workspace                                                            |
-| `pnpm test`                                                                       | Unit and e2e tests in every workspace                                                 |
+| Command                                                                           | What it does                                                                      |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `pnpm dev`                                                                        | Build packages, then run the API (with its background jobs), storefront and admin |
+| `pnpm dev:worker`                                                                 | Optional separate worker, only with `BACKGROUND_JOBS=external` on the API         |
+| `pnpm --filter @repo/api admin:create --email you@example.com --name "Your Name"` | Create the first administrator (two-factor is set up at first sign-in)            |
+| `pnpm dev:api` / `dev:storefront` / `dev:admin`                                   | Run one app                                                                       |
+| `pnpm dev:packages`                                                               | Rebuild shared packages on change                                                 |
+| `pnpm build`                                                                      | Production build of everything                                                    |
+| `pnpm lint` / `pnpm format:check`                                                 | ESLint / Prettier                                                                 |
+| `pnpm typecheck`                                                                  | Type-check every workspace                                                        |
+| `pnpm test`                                                                       | Unit and e2e tests in every workspace                                             |
 
 ## Documentation
 

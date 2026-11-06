@@ -1,14 +1,22 @@
 import type { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import type { RedisService } from '../../infrastructure/redis/redis.service.js';
+import type { JobsStatusService } from '../../jobs/jobs-status.service.js';
 import { HealthService } from './health.service.js';
 
 const up = () => Promise.resolve();
 const down = () => Promise.reject(new Error('down'));
+const jobs = {
+  mode: 'inline' as const,
+  emailConsumer: 'running' as const,
+  catchUp: null,
+  sweeps: {},
+};
 
 function service(db: () => Promise<void>, redis: () => Promise<void>) {
   return new HealthService(
     { ping: db } as unknown as PrismaService,
     { ping: redis } as unknown as RedisService,
+    { snapshot: () => jobs } as unknown as JobsStatusService,
   );
 }
 
@@ -20,6 +28,10 @@ describe('HealthService', () => {
 
   it('is degraded (not down) when only Redis is unavailable', async () => {
     expect((await service(up, down).check()).status).toBe('degraded');
+  });
+
+  it('reports background job status', async () => {
+    expect((await service(up, up).check()).jobs).toEqual(jobs);
   });
 
   it('is down when the database is unavailable', async () => {

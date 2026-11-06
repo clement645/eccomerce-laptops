@@ -8,13 +8,15 @@ import { MediaModule } from './infrastructure/media/media.module.js';
 import { PrismaModule } from './infrastructure/prisma/prisma.module.js';
 import { RedisModule } from './infrastructure/redis/redis.module.js';
 import { RevalidationModule } from './infrastructure/revalidation/revalidation.module.js';
-import { EmailWorker } from './jobs/email.worker.js';
-import { MaintenanceWorker } from './jobs/maintenance.worker.js';
-import { BlogCoreModule } from './modules/blog/blog-core.module.js';
+import { BackgroundJobsModule } from './jobs/background-jobs.module.js';
+import { JobsStatusModule } from './jobs/jobs-status.module.js';
 import { OrdersCoreModule } from './modules/orders/orders-core.module.js';
 import { PaymentsCoreModule } from './modules/payments/payments-core.module.js';
 
-/** Background process: no HTTP server, only queue consumers. */
+/**
+ * Optional separate background process (BACKGROUND_JOBS=external on the API): no HTTP server, only
+ * the email consumer and maintenance sweeps. Not needed on Render Free, where the API runs them.
+ */
 @Module({})
 export class WorkerModule {
   static forRoot(env: ApiEnv): DynamicModule {
@@ -38,9 +40,9 @@ export class WorkerModule {
         MailModule,
         OrdersCoreModule,
         PaymentsCoreModule,
-        BlogCoreModule,
+        JobsStatusModule,
+        BackgroundJobsModule,
       ],
-      providers: [MaintenanceWorker, EmailWorker],
     };
   }
 }

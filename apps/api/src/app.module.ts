@@ -30,6 +30,8 @@ import { PaymentsModule } from './modules/payments/payments.module.js';
 import { PrismaModule } from './infrastructure/prisma/prisma.module.js';
 import { RedisModule } from './infrastructure/redis/redis.module.js';
 import { HealthModule } from './modules/health/health.module.js';
+import { BackgroundJobsModule } from './jobs/background-jobs.module.js';
+import { JobsStatusModule } from './jobs/jobs-status.module.js';
 import { SettingsModule } from './modules/settings/settings.module.js';
 import { StorefrontModule } from './modules/storefront/storefront.module.js';
 
@@ -79,7 +81,8 @@ export class AppModule {
                 return req;
               },
             },
-            autoLogging: { ignore: (req) => req.url?.endsWith('/health') ?? false },
+            // Render polls /health/live every few seconds; don't log health checks.
+            autoLogging: { ignore: (req) => /\/health(\/live)?$/.test(req.url ?? '') },
             ...(env.NODE_ENV === 'development'
               ? { transport: { target: 'pino-pretty', options: { singleLine: true } } }
               : {}),
@@ -112,6 +115,9 @@ export class AppModule {
         ReviewsModule,
         NewsletterModule,
         ContactModule,
+        JobsStatusModule,
+        // Render Free has no free background workers, so by default the API runs its own jobs.
+        ...(env.BACKGROUND_JOBS === 'inline' ? [BackgroundJobsModule] : []),
       ],
       providers: [{ provide: APP_FILTER, useClass: AllExceptionsFilter }],
     };

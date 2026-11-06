@@ -143,14 +143,9 @@ export class OrderPaymentService {
       where: {
         paymentStatus: 'PENDING',
         reservations: { some: { status: 'ACTIVE', expiresAt: { lte: now } } },
-        // Never cancel while the customer may still be completing an M-Pesa prompt.
-        payments: {
-          none: {
-            attempts: {
-              some: { status: { in: ['INITIATED', 'PENDING'] }, expiresAt: { gt: now } },
-            },
-          },
-        },
+        // Never cancel while an M-Pesa prompt is open or its outcome is still unknown: the payment
+        // sweep resolves those first (paid, failed or timed out), then the hold can be released.
+        payments: { none: { attempts: { some: { status: { in: ['INITIATED', 'PENDING'] } } } } },
       },
       select: { id: true },
       take: 100,

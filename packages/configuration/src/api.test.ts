@@ -216,3 +216,15 @@ describe('object storage settings', () => {
     ).toThrow(/S3_ENDPOINT_OVERRIDE/);
   });
 });
+
+describe('background jobs', () => {
+  it('runs jobs inside the API unless told otherwise', () => {
+    expect(parseEnv('api', apiEnvSchema, valid).BACKGROUND_JOBS).toBe('inline');
+    expect(
+      parseEnv('api', apiEnvSchema, { ...valid, BACKGROUND_JOBS: 'external' }).BACKGROUND_JOBS,
+    ).toBe('external');
+    expect(() => parseEnv('api', apiEnvSchema, { ...valid, BACKGROUND_JOBS: 'sometimes' })).toThrow(
+      /BACKGROUND_JOBS/,
+    );
+  });
+});

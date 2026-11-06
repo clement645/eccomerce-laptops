@@ -4,7 +4,7 @@ import { MailService } from '../src/infrastructure/mail/mail.service.js';
 import { PrismaService } from '../src/infrastructure/prisma/prisma.service.js';
 import { RedisService } from '../src/infrastructure/redis/redis.service.js';
 import { hashPassword } from '../src/modules/auth/crypto/password.js';
-import { OrderPaymentService } from '../src/modules/orders/order-payment.service.js';
+import { PaymentSweepService } from '../src/modules/payments/payment-sweep.service.js';
 import { SettingsService } from '../src/modules/settings/settings.service.js';
 import { createTestApp } from './support/test-app.js';
 
@@ -441,13 +441,13 @@ describe('Cart and checkout (e2e)', () => {
         where: { order: { orderNumber: order.orderNumber } },
         data: { expiresAt: new Date(Date.now() - 1000) },
       });
-      // The prompt has also lapsed, so nothing is still in progress.
+      // The prompt has also lapsed and is due a check: Safaricom still reports "processing".
       await prisma.paymentAttempt.updateMany({
         where: { payment: { order: { orderNumber: order.orderNumber } } },
-        data: { expiresAt: new Date(Date.now() - 1000) },
+        data: { expiresAt: new Date(Date.now() - 1000), nextQueryAt: new Date(Date.now() - 1000) },
       });
 
-      expect(await app.get(OrderPaymentService).releaseExpired()).toBeGreaterThanOrEqual(1);
+      expect((await app.get(PaymentSweepService).sweep()).released).toBeGreaterThanOrEqual(1);
       expect(await inventory('expiring')).toMatchObject({ onHand: 2, reserved: 0 });
       const tracked = (await http().get(`/api/v1/orders/track/${order.trackingToken}`).expect(200))
         .body;

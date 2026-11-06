@@ -11,9 +11,9 @@ Things to know before going live, grouped by what they block. Security residual 
    - It needs a run in the Daraja sandbox (credentials, an https callback).
    - Production also needs Safaricom go-live and `PAYMENTS_LIVE_APPROVED=true` with the owner's sign-off.
 3. **Policy pages are missing.** Delivery information, Returns & warranty and Privacy policy are linked from the footer but return 404. They need the store's own terms; they shouldn't be invented.
-4. **No email provider is configured in production yet.** Account confirmation, password reset and order emails are retried by the worker and then dropped. Add `SMTP_*` and `MAIL_FROM` in Render, plus SPF, DKIM and DMARC for the sending domain.
+4. **No email provider is configured in production yet.** Account confirmation, password reset and order emails are queued, retried and then dropped. Add `SMTP_*` and `MAIL_FROM` in Render, plus SPF, DKIM and DMARC for the sending domain.
    - **No payment method is switched on in production:** M-Pesa needs Daraja credentials, and cash on delivery is off in Store settings, so the live site can't take orders yet.
-   - **The API is on Render's free plan,** which sleeps when idle (a slow first request). The worker needs the paid Starter plan. The Upstash free tier can run out of commands because BullMQ polls constantly; use pay-as-you-go.
+   - **The API is on Render's free plan,** which sleeps after 15 minutes idle. The first request afterwards takes about a minute, and emails and scheduled posts wait until the next visit. Background jobs run inside the API, so there is no paid worker. See [Background jobs on Render Free](./DEPLOYMENT.md#background-jobs-on-render-free).
 
 ## Should fix soon after launch
 
@@ -34,6 +34,7 @@ Things to know before going live, grouped by what they block. Security residual 
 
 10. **Refunds are bookkeeping only.** Staff send M-Pesa reversals outside the platform and record them.
 11. **M-Pesa callbacks for a prompt whose request timed out** arrive "unmatched" and need manual matching.
+    - A callback sent while the API is waking up may time out on Safaricom's side. The payment is still found by STK Query at startup, but an M-Pesa attempt whose outcome stays unknown for 24 hours (Safaricom unreachable) is only logged and needs a manual check.
 12. **Newsletter campaigns** are sent with an external tool from the CSV export.
 13. **Unknown product, category or brand URLs** return a "not found" page with status 200 and `noindex`, not a 404 status.
 14. **Browser coverage:** automated runs use Chromium (desktop and Pixel 7 emulation) only; Safari and Firefox haven't been run.

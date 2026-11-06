@@ -3,12 +3,13 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { Permission } from '@repo/shared-types';
 import request from 'supertest';
 import { EmailWorker } from '../src/jobs/email.worker.js';
+import { JobsStatusService } from '../src/jobs/jobs-status.service.js';
 import { MailService } from '../src/infrastructure/mail/mail.service.js';
 import { PrismaService } from '../src/infrastructure/prisma/prisma.service.js';
 import { RedisService } from '../src/infrastructure/redis/redis.service.js';
 import { TokenService } from '../src/modules/auth/token.service.js';
 import { BlogService } from '../src/modules/blog/blog.service.js';
-import { OrderPaymentService } from '../src/modules/orders/order-payment.service.js';
+import { PaymentSweepService } from '../src/modules/payments/payment-sweep.service.js';
 import { SettingsService } from '../src/modules/settings/settings.service.js';
 import { removeStaff, staffWithSession } from './support/staff.js';
 import { createTestApp } from './support/test-app.js';
@@ -446,9 +447,9 @@ describe('Content, reviews, coupons, newsletter, contact and settings (e2e)', ()
       });
       await prisma.paymentAttempt.updateMany({
         where: { payment: { orderId: order.id } },
-        data: { expiresAt: new Date(Date.now() - 1000) },
+        data: { expiresAt: new Date(Date.now() - 1000), nextQueryAt: new Date(Date.now() - 1000) },
       });
-      await app.get(OrderPaymentService).releaseExpired();
+      await app.get(PaymentSweepService).sweep();
       expect(
         (await prisma.coupon.findUniqueOrThrow({ where: { code: code('TEN') } })).redemptionCount,
       ).toBe(0);
@@ -631,32 +632,50 @@ describe('Content, reviews, coupons, newsletter, contact and settings (e2e)', ()
   });
 
   describe('email queue', () => {
-    it('hands emails to the worker, which delivers them', async () => {
+    it('hands emails to the consumer, which delivers each one once', async () => {
+      const env = testEnv({ MAIL_DELIVERY: 'queue', REDIS_KEY_PREFIX: `${run}-mailq` });
       const queued = await createTestApp({
         MAIL_DELIVERY: 'queue',
         REDIS_KEY_PREFIX: `${run}-mailq`,
       });
+      const status = new JobsStatusService(env);
       const worker = new EmailWorker(
         queued.get(MailService),
-        testEnv({ REDIS_KEY_PREFIX: `${run}-mailq` }),
+        queued.get(RedisService),
+        status,
+        env,
       );
-      try {
-        const service = queued.get(MailService);
-        expect(
-          await service.send({
-            to: `${run}-q@example.com`,
-            subject: 'Queued',
-            text: 'Hi',
-            html: '<p>Hi</p>',
-          }),
-        ).toBe(true);
-        expect(service.outbox).toHaveLength(0);
-        worker.onModuleInit();
-        for (let i = 0; i < 50 && service.outbox.length === 0; i++)
+      const message = {
+        to: `${run}-q@example.com`,
+        subject: 'Queued',
+        text: 'Hi',
+        html: '<p>Hi</p>',
+      };
+      const waitFor = async (n: number) => {
+        for (let i = 0; i < 50 && service.outbox.length < n; i++)
           await new Promise((r) => setTimeout(r, 100));
+      };
+      const service = queued.get(MailService);
+      try {
+        // Queued while no consumer runs (as when Render is asleep): it waits in Redis.
+        expect(await service.send(message)).toBe(true);
+        // The same email requested twice (a retried request) is queued only once.
+        expect(await service.send(message)).toBe(true);
+        expect(service.outbox).toHaveLength(0);
+
+        worker.onModuleInit();
+        expect(status.snapshot().emailConsumer).toBe('running');
+        await waitFor(1);
+        await new Promise((r) => setTimeout(r, 500));
         expect(service.outbox.map((m) => m.subject)).toEqual(['Queued']);
+
+        // A different email is delivered too.
+        await service.send({ ...message, subject: 'Second', text: 'Other' });
+        await waitFor(2);
+        expect(service.outbox.map((m) => m.subject)).toEqual(['Queued', 'Second']);
       } finally {
         await worker.onModuleDestroy();
+        expect(status.snapshot().emailConsumer).toBe('off');
         const redis = queued.get(RedisService).client;
         const keys = await redis.keys(`${run}-mailq:*`);
         if (keys.length) await redis.del(...keys);

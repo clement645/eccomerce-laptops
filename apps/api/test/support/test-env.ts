@@ -23,6 +23,8 @@ export function testEnv(overrides: Record<string, string> = {}): ApiEnv {
     ADMIN_URL: 'http://localhost:5173',
     MAIL_TRANSPORT: 'memory',
     MAIL_DELIVERY: 'direct',
+    // Tests drive sweeps and workers themselves.
+    BACKGROUND_JOBS: 'disabled',
     PAYMENTS_SIMULATED: 'true',
     // Uploads go to the local RustFS container, in a bucket only tests use.
     S3_ENDPOINT_OVERRIDE: 'http://localhost:9000',

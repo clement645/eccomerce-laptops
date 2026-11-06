@@ -1,13 +1,32 @@
-# Render blueprint: the API (web service) and the background worker, built from one Docker image.
+# Render blueprint: ONE free web service. The API runs its own background work (email delivery and
+# the payment, stock and blog sweeps) because Render has no free background workers. See
+# docs/DEPLOYMENT.md, "Running on Render Free".
 # Secrets are `sync: false`: Render asks for them when the blueprint is first applied, and they are
-# never stored in this file. Non-secret settings live in the shared group below.
-envVarGroups:
-  - name: ecommerce-shared
+# never stored in this file.
+services:
+  - type: web
+    name: eccomerce-laptops-api
+    runtime: docker
+    dockerfilePath: ./infrastructure/docker/api.Dockerfile
+    dockerContext: .
+    plan: free
+    # Same region as the Neon database (us-east-2).
+    region: ohio
+    # Liveness only (no database or Redis call), so a slow dependency can't make Render restart a
+    # healthy process. GET /api/v1/health reports dependencies and background jobs.
+    healthCheckPath: /api/v1/health/live
+    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
       - key: LOG_LEVEL
         value: info
+      # Background jobs run inside this process (no separate worker).
+      - key: BACKGROUND_JOBS
+        value: inline
+      # Render Free has 512 MB: keep the heap well below it (the rest is native memory and buffers).
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=320
       - key: API_PUBLIC_URL
         value: https://eccomerce-laptops-api.onrender.com
       - key: STOREFRONT_URL
@@ -18,8 +37,9 @@ envVarGroups:
         value: https://eccomerce-laptops.netlify.app,https://eccomerce-laptops-admin.netlify.app
       - key: STOREFRONT_REVALIDATE_URL
         value: https://eccomerce-laptops.netlify.app/api/revalidate
+      # One small process: a few connections are enough (Neon's pooler does the rest).
       - key: DATABASE_POOL_MAX
-        value: '5'
+        value: '3'
       - key: REDIS_KEY_PREFIX
         value: ecommerce
       - key: R2_PUBLIC_BUCKET
@@ -30,6 +50,7 @@ envVarGroups:
         value: https://pub-1a4e67cdc47a4ba7b5f38d510c23b318.r2.dev
       - key: MAIL_TRANSPORT
         value: smtp
+      # Emails are queued in Redis, so they survive restarts and sleep (see DEPLOYMENT.md).
       - key: MAIL_DELIVERY
         value: queue
       - key: PAYMENTS_SIMULATED
@@ -53,32 +74,5 @@ envVarGroups:
         sync: false
       - key: R2_SECRET_ACCESS_KEY
         sync: false
-      # Email: add SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASSWORD and MAIL_FROM to this group
-      # once an email provider is chosen. Until then emails are retried by the worker and then dropped.
-
-services:
-  - type: web
-    name: eccomerce-laptops-api
-    runtime: docker
-    dockerfilePath: ./infrastructure/docker/api.Dockerfile
-    dockerContext: .
-    plan: free
-    # Same region as the Neon database (us-east-2).
-    region: ohio
-    healthCheckPath: /api/v1/health
-    autoDeploy: true
-    envVars:
-      - fromGroup: ecommerce-shared
-
-  - type: worker
-    name: eccomerce-laptops-worker
-    runtime: docker
-    dockerfilePath: ./infrastructure/docker/api.Dockerfile
-    dockerContext: .
-    dockerCommand: node dist/worker.js
-    # Background workers have no free plan on Render.
-    plan: starter
-    region: ohio
-    autoDeploy: true
-    envVars:
-      - fromGroup: ecommerce-shared
+      # Email: add SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASSWORD and MAIL_FROM here once
+      # an email provider is chosen. Until then queued emails are retried and then dropped.

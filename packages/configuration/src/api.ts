@@ -83,6 +83,13 @@ export const apiEnvSchema = z
     MAIL_TRANSPORT: z.enum(['smtp', 'memory']).default('smtp'),
     /** queue: emails are sent by the worker with retries. direct: sent in the request (tests). */
     MAIL_DELIVERY: z.enum(['queue', 'direct']).default('queue'),
+
+    // ── Background jobs ────────────────────────────────────────────────────
+    /**
+     * inline: the API process runs the email consumer and maintenance sweeps (one service, e.g. Render Free).
+     * external: a separate worker process (dist/worker.js) runs them. disabled: neither (tests).
+     */
+    BACKGROUND_JOBS: z.enum(['inline', 'external', 'disabled']).default('inline'),
     SMTP_HOST: z.string().default('localhost'),
     SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(1025),
     SMTP_SECURE: z

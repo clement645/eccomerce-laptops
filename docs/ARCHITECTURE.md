@@ -82,7 +82,7 @@ Modular monolith, with one Nest module per bounded context:
 ```text
 apps/api/src/
   main.ts                 HTTP entry
-  worker.ts               BullMQ worker entry (Phase 2+)
+  worker.ts               Optional separate worker entry (BACKGROUND_JOBS=external)
   config/                 Zod-validated environment
   common/                 filters, interceptors, guards, decorators, pipes
   infrastructure/         prisma, redis, storage (R2), queue, mail
@@ -109,7 +109,7 @@ Rules:
 1. Checkout opens a transaction and runs `UPDATE inventory SET reserved = reserved + :q WHERE variant_id = :v AND on_hand - reserved >= :q`. If zero rows change, stock is insufficient and the order is not created.
 2. The same transaction inserts a `StockReservation` row with `expires_at = now() + 15 min`, linked to the order.
 3. Payment confirmed: in one transaction, decrement `on_hand` and `reserved`, mark the reservation `CONSUMED`, and write an `InventoryMovement`.
-4. Payment failed, timed out, or abandoned: a BullMQ job (plus a periodic sweeper as a safety net) releases expired reservations, so inventory is never locked permanently.
+4. Payment failed, timed out, or abandoned: the payment sweep (every 30 s, and once at startup) releases expired reservations, so inventory is never locked permanently. It never releases an order while one of its M-Pesa prompts is still open or its outcome unknown.
 5. DB check constraints guarantee `on_hand >= 0`, `reserved >= 0`, and `reserved <= on_hand`.
 
 **M-Pesa STK Push** (implemented in Phase 7, see [ADR 0005](adr/0005-payment-verification.md))
@@ -120,7 +120,7 @@ Rules:
 4. Callback: store the raw payload as a `PaymentEvent` (deduplicated), call **STK Query**, apply its result and answer `200`.
    - The order becomes `PAID` (stock consumed, receipt stored) only when STK Query reports success.
    - The receipt is stored only when the callback amount equals the attempt amount.
-5. No callback: the worker polls STK Query with backoff. After 3 minutes without an answer the attempt is `TIMED_OUT`, and stock is released when the order's hold expires.
+5. No callback: the payment sweep calls STK Query with backoff. When Safaricom still reports "processing" after the prompt's window, the attempt is `TIMED_OUT` and gets one final check 10 minutes later; stock is released when the order's hold has expired and no prompt is open. A failed STK Query never counts as a timeout: the attempt stays pending (and the order kept) for up to 24 hours.
 6. Money confirmed for a paid or cancelled order is recorded and a full refund is queued for staff.
 
 ## 4. Frontends
@@ -157,11 +157,11 @@ Rules:
   - `POST /checkout/orders` needs an `Idempotency-Key` and the reviewed `expectedTotalMinor`; see [ADR 0004](./adr/0004-money-and-inventory.md) for the transaction.
   - Order numbers come from a Postgres sequence (`EL-2026-001001`). Guests track orders through an unguessable token link, never by order number alone.
 - **Payments:** M-Pesa is **simulated** when `PAYMENTS_SIMULATED=true` (refused in production), with `POST /checkout/orders/:number/simulate-payment` standing in for the Daraja callback. Phase 7 added real STK Push, callbacks and STK Query alongside it (see ADR 0005). Cash on delivery follows the `checkout.cashOnDelivery` setting (enabled, counties, maximum) and each delivery method's `codAllowed`.
-- **Worker:** `dist/worker.js` (same image as the API) runs BullMQ consumers. The `maintenance` queue releases stock for unpaid orders every minute.
+- **Background jobs:** run inside the API process by default (`BACKGROUND_JOBS=inline`), because Render Free has no free background workers. See [Background jobs](./DEPLOYMENT.md#background-jobs-on-render-free) for what runs where and what happens while the service sleeps. `dist/worker.js` can still run them as a separate process (`BACKGROUND_JOBS=external` on the API).
 
 **Content and engagement (implemented in Phase 9, see [ADR 0007](./adr/0007-content-and-engagement.md)):**
 
-- **Blog:** `/blog` and `/blog/[slug]` with `BlogPosting` JSON-LD and sitemap entries. Staff write HTML that the API sanitizes (`sanitizeRichText`). Publishing needs `blog:publish`. Scheduled posts go live through the worker's `publish-scheduled-posts` job (every minute), which revalidates the `blog`, `post:<slug>` and homepage tags.
+- **Blog:** `/blog` and `/blog/[slug]` with `BlogPosting` JSON-LD and sitemap entries. Staff write HTML that the API sanitizes (`sanitizeRichText`). Publishing needs `blog:publish`. Scheduled posts go live through the `scheduled-posts` sweep (every 5 minutes, and at startup), which revalidates the `blog`, `post:<slug>` and homepage tags.
 - **Reviews:** only customers with a delivered, paid order for the product can review it (`PUT /account/reviews/:slug`). Every review waits for moderation (`reviews:moderate`). `ratingAvg` / `ratingCount` are recomputed from approved reviews only, never entered by hand. Public reviews show a first name and last initial.
 - **Coupons:** a percentage (optional cap) or a fixed amount off the goods subtotal, never delivery.
   - Rules: dates, minimum spend, total uses, uses per customer, first order only. The quote checks them for display.
@@ -171,7 +171,7 @@ Rules:
 - **Newsletter:** double opt-in. The confirmation link expires after 7 days. Unsubscribe links are an HMAC of the subscriber id (stable across emails, never stored). The subscribe endpoint answers the same way whatever the address's state. Staff can export confirmed subscribers as CSV.
 - **Contact:** messages are stored and forwarded (Reply-To set to the customer) to the store contact email from settings. There's no automatic reply to the address typed in the form, and a hidden honeypot field files bots as spam.
 - **Store settings:** `PUT /admin/settings/:key` for an allowlist of keys, each with its own Zod schema; audited, and the storefront layout is revalidated.
-- **Email:** `MailService.send` queues to BullMQ (`email` queue) and the worker delivers with 6 attempts and exponential backoff. If Redis is unreachable it sends directly instead.
+- **Email:** `MailService.send` queues to BullMQ (`email` queue) and the email consumer delivers with 6 attempts and exponential backoff. The job id is a hash of recipient and content, and a 7-day "sent" marker in Redis stops a retried job sending twice. If Redis is unreachable it sends directly instead.
 
 **Admin (Vue 3 SPA, implemented in Phase 8):**
 
@@ -237,14 +237,14 @@ Invalidation bumps a version counter per namespace instead of using `KEYS`/`SCAN
 
 ## 9. Deployment
 
-| Component    | Host                                         | Notes                                                                                               |
-| ------------ | -------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Storefront   | Netlify (Next.js runtime / OpenNext adapter) | `apps/storefront` base directory                                                                    |
-| Admin        | Netlify static                               | SPA fallback redirect `/* /index.html 200`                                                          |
-| API + worker | Render / Railway / Fly.io (Docker image)     | Two processes from one image: `node dist/main.js` and `node dist/worker.js`                         |
-| Database     | Neon                                         | Pooled URL for runtime, direct URL for migrations, branch-per-preview optional                      |
-| Redis        | Redis Cloud or Upstash (fixed plan)          | Must support BullMQ (blocking commands, Lua). Upstash pay-per-request is costly for BullMQ polling. |
-| Media        | Cloudflare R2                                | Public media bucket on a custom domain, plus a private bucket                                       |
+| Component  | Host                                         | Notes                                                                                                      |
+| ---------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Storefront | Netlify (Next.js runtime / OpenNext adapter) | `apps/storefront` base directory                                                                           |
+| Admin      | Netlify static                               | SPA fallback redirect `/* /index.html 200`                                                                 |
+| API        | Render Free web service (Docker image)       | One process, `node dist/main.js`, which also runs the background jobs (`BACKGROUND_JOBS=inline`)           |
+| Database   | Neon                                         | Pooled URL for runtime, direct URL for migrations, branch-per-preview optional                             |
+| Redis      | Upstash                                      | Cache, rate limits and the email queue. Maintenance no longer uses Redis; the email consumer polls rarely. |
+| Media      | Cloudflare R2                                | Public media bucket on a custom domain, plus a private bucket                                              |
 
 ## 10. Architectural risks
 

@@ -28,6 +28,13 @@ export const ATTEMPT_WINDOW_MS = 3 * 60_000;
 const FIRST_QUERY_DELAY_MS = 45_000;
 /** A push that was never sent (the process stopped mid-way) is given up after this long. */
 const STUCK_INITIATED_MS = 2 * 60_000;
+/**
+ * A prompt that timed out is checked once more after this long. It catches payments whose callback
+ * never arrived (for example while the API was asleep) and settles them, or queues a refund.
+ */
+const FINAL_CHECK_DELAY_MS = 10 * 60_000;
+/** If Safaricom can't be asked for this long, stop and leave the attempt for manual review. */
+const MAX_UNKNOWN_MS = 24 * 60 * 60_000;
 
 export const CALLBACK_PATH = 'payments/mpesa/callback';
 
@@ -247,11 +254,13 @@ export class MpesaPaymentService {
     }
 
     let result: StkQueryResult;
+    let queryFailed = false;
     try {
       result = await this.gateway.stkQuery(attempt.checkoutRequestId);
     } catch (error) {
       this.logger.warn(`STK Query failed for attempt ${attemptId}: ${(error as Error).message}`);
       result = { state: 'PENDING', resultCode: null, resultDesc: null };
+      queryFailed = true;
     }
     const now = new Date();
 
@@ -287,12 +296,31 @@ export class MpesaPaymentService {
     }
 
     // Still processing (or the query failed). The callback event stays open until the next check.
+    if (attempt.status === 'TIMED_OUT') {
+      // The final check also found nothing: stop asking. A late callback can still settle it.
+      await this.prisma.client.paymentAttempt.updateMany({
+        where: { id: attemptId, status: 'TIMED_OUT' },
+        data: { nextQueryAt: null },
+      });
+      return 'TIMED_OUT';
+    }
     if (attempt.status !== 'PENDING') return 'PENDING';
-    if (attempt.expiresAt <= now) {
+    const tooOld = now.getTime() - attempt.createdAt.getTime() > MAX_UNKNOWN_MS;
+    // Only Safaricom saying "still processing" past the window counts as a timeout. A failed query
+    // means the outcome is unknown, so the attempt stays pending (and its order is not cancelled).
+    if ((attempt.expiresAt <= now && !queryFailed) || tooOld) {
       await this.prisma.client.paymentAttempt.updateMany({
         where: { id: attemptId, status: 'PENDING' },
-        data: { status: 'TIMED_OUT', completedAt: now, nextQueryAt: null },
+        data: {
+          status: 'TIMED_OUT',
+          completedAt: now,
+          nextQueryAt: tooOld ? null : new Date(now.getTime() + FINAL_CHECK_DELAY_MS),
+        },
       });
+      if (tooOld)
+        this.logger.error(
+          `M-Pesa attempt ${attemptId}: outcome unknown after 24 hours; check it by hand`,
+        );
       return 'TIMED_OUT';
     }
     const delay = Math.min(15_000 * 2 ** attempt.queryCount, 120_000);
@@ -303,7 +331,11 @@ export class MpesaPaymentService {
     return 'PENDING';
   }
 
-  /** Worker: checks prompts that have had no answer yet, and gives up on pushes that never went out. */
+  /**
+   * Sweep: checks prompts that have had no answer yet (and timed-out prompts due their final check),
+   * and gives up on pushes that never went out. Postgres holds all the state, so this is safe to run
+   * from any process, any number of times.
+   */
   async reconcileDue(now = new Date()): Promise<{ checked: number; settled: number }> {
     await this.prisma.client.paymentAttempt.updateMany({
       where: {
@@ -318,7 +350,11 @@ export class MpesaPaymentService {
       },
     });
     const due = await this.prisma.client.paymentAttempt.findMany({
-      where: { status: 'PENDING', checkoutRequestId: { not: null }, nextQueryAt: { lte: now } },
+      where: {
+        status: { in: ['PENDING', 'TIMED_OUT'] },
+        checkoutRequestId: { not: null },
+        nextQueryAt: { lte: now },
+      },
       orderBy: { nextQueryAt: 'asc' },
       select: { id: true },
       take: 50,
@@ -326,7 +362,8 @@ export class MpesaPaymentService {
     let settled = 0;
     for (const { id } of due) {
       try {
-        if ((await this.reconcile(id)) !== 'PENDING') settled++;
+        const outcome = await this.reconcile(id);
+        if (outcome === 'SUCCEEDED' || outcome === 'FAILED' || outcome === 'CANCELLED') settled++;
       } catch (error) {
         this.logger.error(`Could not reconcile attempt ${id}: ${(error as Error).message}`);
       }

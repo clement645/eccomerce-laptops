@@ -4,6 +4,7 @@ import { MailService } from '../src/infrastructure/mail/mail.service.js';
 import { PrismaService } from '../src/infrastructure/prisma/prisma.service.js';
 import { RedisService } from '../src/infrastructure/redis/redis.service.js';
 import { OrderPaymentService } from '../src/modules/orders/order-payment.service.js';
+import { PaymentSweepService } from '../src/modules/payments/payment-sweep.service.js';
 import { MpesaPaymentService } from '../src/modules/payments/mpesa-payment.service.js';
 import {
   MPESA_GATEWAY,
@@ -41,6 +42,8 @@ class FakeMpesa implements MpesaGateway {
   pushes: (StkPushRequest & { checkoutRequestId: string })[] = [];
   states = new Map<string, StkQueryResult>();
   failNextPush: MpesaGatewayError | null = null;
+  /** When set, STK Query fails (Safaricom unreachable). */
+  failQueries = false;
   queries = 0;
   private n = 0;
 
@@ -57,6 +60,8 @@ class FakeMpesa implements MpesaGateway {
 
   stkQuery(id: string) {
     this.queries++;
+    if (this.failQueries)
+      return Promise.reject(new MpesaGatewayError('unreachable', 'NETWORK', false));
     return Promise.resolve(this.states.get(id) ?? STILL_PROCESSING);
   }
 
@@ -576,6 +581,105 @@ describe('M-Pesa payments (e2e)', () => {
         status: 'FAILED',
         resultCode: 'PUSH_FAILED',
       });
+    });
+  });
+
+  describe('recovery after the API was asleep', () => {
+    /** As if the API slept through the whole payment window: the hold and the prompt have lapsed. */
+    async function lapse(orderNumber: string, checkoutRequestId: string) {
+      const past = new Date(Date.now() - 1000);
+      await prisma.stockReservation.updateMany({
+        where: { order: { orderNumber } },
+        data: { expiresAt: past },
+      });
+      await prisma.paymentAttempt.updateMany({
+        where: { checkoutRequestId },
+        data: { expiresAt: past, nextQueryAt: past },
+      });
+    }
+
+    it('settles an order paid while asleep instead of cancelling it', async () => {
+      const before = await stock();
+      const { order } = await placeOrder(1);
+      const { checkoutRequestId } = fake.last;
+      // The customer paid; the callback never arrived (the service was asleep).
+      fake.states.set(checkoutRequestId, PAID);
+      await lapse(order.orderNumber, checkoutRequestId);
+
+      const result = await app.get(PaymentSweepService).sweep();
+      expect(result.settled).toBeGreaterThanOrEqual(1);
+      expect(await orderRow(order.orderNumber)).toMatchObject({ paymentStatus: 'PAID' });
+      expect((await orderRow(order.orderNumber)).fulfillmentStatus).not.toBe('CANCELLED');
+      expect(await stock()).toMatchObject({
+        onHand: before.onHand - 1,
+        reserved: before.reserved,
+      });
+      // Running again changes nothing.
+      await app.get(PaymentSweepService).sweep();
+      expect((await stock()).onHand).toBe(before.onHand - 1);
+    });
+
+    it('keeps the order while Safaricom cannot be asked, and resolves it once it can', async () => {
+      const { order } = await placeOrder(1);
+      const { checkoutRequestId } = fake.last;
+      await lapse(order.orderNumber, checkoutRequestId);
+      fake.failQueries = true;
+      try {
+        await app.get(PaymentSweepService).sweep();
+      } finally {
+        fake.failQueries = false;
+      }
+      // Unknown outcome: not timed out, not cancelled.
+      let row = await orderRow(order.orderNumber);
+      expect(row.payments[0]!.attempts[0]!.status).toBe('PENDING');
+      expect(row.paymentStatus).toBe('PENDING');
+      expect(row.fulfillmentStatus).not.toBe('CANCELLED');
+
+      fake.states.set(checkoutRequestId, PAID);
+      await prisma.paymentAttempt.updateMany({
+        where: { checkoutRequestId },
+        data: { nextQueryAt: new Date(Date.now() - 1000) },
+      });
+      await app.get(PaymentSweepService).sweep();
+      row = await orderRow(order.orderNumber);
+      expect(row.paymentStatus).toBe('PAID');
+    });
+
+    it('gives a timed-out prompt one final check, then stops asking', async () => {
+      const { order } = await placeOrder(1);
+      const { checkoutRequestId } = fake.last;
+      await lapse(order.orderNumber, checkoutRequestId);
+      const sweep = app.get(PaymentSweepService);
+      await sweep.sweep();
+      let attempt = (await orderRow(order.orderNumber)).payments[0]!.attempts[0]!;
+      expect(attempt.status).toBe('TIMED_OUT');
+      expect(attempt.nextQueryAt!.getTime()).toBeGreaterThan(Date.now() + 9 * 60_000);
+      expect((await orderRow(order.orderNumber)).fulfillmentStatus).toBe('CANCELLED');
+
+      // Final check (10 minutes later) finds a late success: recorded, refund queued, order stays cancelled.
+      fake.states.set(checkoutRequestId, PAID);
+      await prisma.paymentAttempt.updateMany({
+        where: { checkoutRequestId },
+        data: { nextQueryAt: new Date(Date.now() - 1000) },
+      });
+      await sweep.sweep();
+      const row = await orderRow(order.orderNumber);
+      expect(row.fulfillmentStatus).toBe('CANCELLED');
+      expect(row.payments.flatMap((p) => p.refunds)).toEqual([
+        expect.objectContaining({ status: 'REQUESTED' }),
+      ]);
+
+      // Still unanswered at the final check: no more queries.
+      const second = await placeOrder(1);
+      await lapse(second.order.orderNumber, fake.last.checkoutRequestId);
+      await sweep.sweep();
+      await prisma.paymentAttempt.updateMany({
+        where: { checkoutRequestId: fake.last.checkoutRequestId },
+        data: { nextQueryAt: new Date(Date.now() - 1000) },
+      });
+      await sweep.sweep();
+      attempt = (await orderRow(second.order.orderNumber)).payments[0]!.attempts[0]!;
+      expect(attempt).toMatchObject({ status: 'TIMED_OUT', nextQueryAt: null });
     });
   });
 

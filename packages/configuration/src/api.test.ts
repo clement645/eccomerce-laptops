@@ -31,6 +31,17 @@ const production = {
 };
 
 describe('apiEnvSchema', () => {
+  it('keeps same-site cookies unless cross-site cookies are turned on', () => {
+    expect(parseEnv('api', apiEnvSchema, valid).CROSS_SITE_COOKIES).toBe(false);
+    expect(
+      parseEnv('api', apiEnvSchema, { ...production, CROSS_SITE_COOKIES: 'true' })
+        .CROSS_SITE_COOKIES,
+    ).toBe(true);
+    expect(() => parseEnv('api', apiEnvSchema, { ...valid, CROSS_SITE_COOKIES: 'yes' })).toThrow(
+      EnvValidationError,
+    );
+  });
+
   it('parses and normalises a valid environment', () => {
     const env = parseEnv('api', apiEnvSchema, valid);
     expect(env.PORT).toBe(4000);

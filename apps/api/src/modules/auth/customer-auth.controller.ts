@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { ApiEnv } from '@repo/configuration';
+import { cookiePolicy, type CookiePolicy } from '../../common/http/cookie-policy.js';
 import type { AuthResponse, MessageResponse, SessionUser } from '@repo/shared-types';
 import {
   emailOnlySchema,
@@ -43,14 +44,14 @@ const GENERIC = {
 @ApiTags('auth')
 @Controller('auth')
 export class CustomerAuthController {
-  private readonly secureCookies: boolean;
+  private readonly cookies: CookiePolicy;
 
   constructor(
     private readonly auth: CustomerAuthService,
     private readonly sessions: SessionService,
     @Inject(API_ENV) env: ApiEnv,
   ) {
-    this.secureCookies = env.NODE_ENV === 'production';
+    this.cookies = cookiePolicy(env);
   }
 
   @Post('register')
@@ -97,7 +98,7 @@ export class CustomerAuthController {
       'storefront',
       issued.refreshToken,
       this.sessions.ttlMs('storefront'),
-      this.secureCookies,
+      this.cookies,
     );
     return response;
   }
@@ -119,12 +120,12 @@ export class CustomerAuthController {
         'storefront',
         issued.refreshToken,
         this.sessions.ttlMs('storefront'),
-        this.secureCookies,
+        this.cookies,
       );
       return response;
     } catch (error) {
       if (error instanceof UnauthorizedException)
-        clearRefreshCookie(res, 'storefront', this.secureCookies);
+        clearRefreshCookie(res, 'storefront', this.cookies);
       throw error;
     }
   }
@@ -135,7 +136,7 @@ export class CustomerAuthController {
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<void> {
     const token = readRefreshCookie(req, 'storefront');
     if (token) await this.sessions.revokeByToken(token);
-    clearRefreshCookie(res, 'storefront', this.secureCookies);
+    clearRefreshCookie(res, 'storefront', this.cookies);
   }
 
   @Post('forgot-password')

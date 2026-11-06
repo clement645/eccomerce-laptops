@@ -6,6 +6,7 @@
 ## Decision
 
 - All apps live under one registrable domain (`www.`, `admin.`, `api.`), so auth cookies are same-site.
+  - **Interim (Phase 11):** the first deployment uses the hosts' own addresses (`netlify.app`, `onrender.com`), which are different sites. `CROSS_SITE_COOKIES=true` sends the refresh and cart cookies as `SameSite=None; Secure; Partitioned` until a shared domain is set up. The Origin and custom-header checks below then carry the CSRF defence alone.
 - **Access token:** 10-minute HS256 JWT (`aud` = `storefront` or `admin`, `sid` = session id), held in memory by the client and sent as a Bearer header. Never stored in localStorage.
 - **Refresh token:** 256-bit opaque value in an `HttpOnly` cookie, host-only on the API. `sf_rt` uses `SameSite=Lax` at `Path=/api/v1/auth`; `adm_rt` uses `SameSite=Strict` at `Path=/api/v1/admin/auth`. Cookies are `Secure` in production. Only the SHA-256 hash is stored.
 - **Rotation and reuse detection:** every refresh replaces the session row within its family. Presenting an already-rotated token after a 10-second grace window revokes the whole family and is audited. Inside the window the API answers `409 REFRESH_IN_PROGRESS` so concurrent tabs retry instead of being signed out.

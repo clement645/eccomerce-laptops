@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { sameSiteAttributes, type CookiePolicy } from '../../common/http/cookie-policy.js';
 import { GUEST_CART_TTL_MS } from './cart.service.js';
 
 /** Guest cart cookie: opaque, HttpOnly, readable by the cart and checkout endpoints only. */
@@ -10,16 +11,15 @@ export function readGuestCartToken(req: Request): string | null {
   return typeof value === 'string' && /^[A-Za-z0-9_-]{20,100}$/.test(value) ? value : null;
 }
 
-export function writeGuestCartToken(res: Response, token: string, secure: boolean): void {
+export function writeGuestCartToken(res: Response, token: string, policy: CookiePolicy): void {
   res.cookie(NAME, token, {
     httpOnly: true,
-    secure,
-    sameSite: 'lax',
+    ...sameSiteAttributes(policy, 'lax'),
     path: PATH,
     maxAge: GUEST_CART_TTL_MS,
   });
 }
 
-export function clearGuestCartToken(res: Response, secure: boolean): void {
-  res.clearCookie(NAME, { httpOnly: true, secure, sameSite: 'lax', path: PATH });
+export function clearGuestCartToken(res: Response, policy: CookiePolicy): void {
+  res.clearCookie(NAME, { httpOnly: true, ...sameSiteAttributes(policy, 'lax'), path: PATH });
 }

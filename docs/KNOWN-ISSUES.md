@@ -13,6 +13,7 @@ Things to know before going live, grouped by what they block. Security residual 
 3. **Policy pages are missing.** Delivery information, Returns & warranty and Privacy policy are linked from the footer but return 404. They need the store's own terms; they shouldn't be invented.
 4. **No email provider is configured in production yet.** Account confirmation, password reset and order emails are queued, retried and then dropped. Add `SMTP_*` and `MAIL_FROM` in Render, plus SPF, DKIM and DMARC for the sending domain.
    - **No payment method is switched on in production:** M-Pesa needs Daraja credentials, and cash on delivery is off in Store settings, so the live site can't take orders yet.
+   - **The apps and API are on different sites** (`netlify.app`, `onrender.com`), so sign-in and cart cookies are sent as cross-site cookies (`CROSS_SITE_COOKIES=true`). That works in Chrome, Edge and Firefox. Safari and iPhone browsers may block them: staff and customers would be signed out on reload, and guest carts reset. Fix: put all three on one domain you own and set `CROSS_SITE_COOKIES=false`.
    - **The API is on Render's free plan,** which sleeps after 15 minutes idle. The first request afterwards takes about a minute, and emails and scheduled posts wait until the next visit. Background jobs run inside the API, so there is no paid worker. See [Background jobs on Render Free](./DEPLOYMENT.md#background-jobs-on-render-free).
 
 ## Should fix soon after launch

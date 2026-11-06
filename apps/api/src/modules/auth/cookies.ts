@@ -1,7 +1,11 @@
 import type { CookieOptions, Request, Response } from 'express';
+import { sameSiteAttributes, type CookiePolicy } from '../../common/http/cookie-policy.js';
 import type { Audience } from './auth.types.js';
 
-/** Refresh cookies are host-only on the API, HttpOnly, and scoped to the auth paths that read them. */
+/**
+ * Refresh cookies are host-only on the API, HttpOnly, and scoped to the auth paths that read them.
+ * SameSite below applies when the apps share the API's site; see CookiePolicy otherwise.
+ */
 export const REFRESH_COOKIE: Record<
   Audience,
   { name: string; path: string; sameSite: 'lax' | 'strict' }
@@ -10,12 +14,11 @@ export const REFRESH_COOKIE: Record<
   admin: { name: 'adm_rt', path: '/api/v1/admin/auth', sameSite: 'strict' },
 };
 
-function options(audience: Audience, secure: boolean, maxAgeMs?: number): CookieOptions {
+function options(audience: Audience, policy: CookiePolicy, maxAgeMs?: number): CookieOptions {
   const cookie = REFRESH_COOKIE[audience];
   return {
     httpOnly: true,
-    secure,
-    sameSite: cookie.sameSite,
+    ...sameSiteAttributes(policy, cookie.sameSite),
     path: cookie.path,
     ...(maxAgeMs ? { maxAge: maxAgeMs } : {}),
   };
@@ -26,13 +29,13 @@ export function setRefreshCookie(
   audience: Audience,
   token: string,
   maxAgeMs: number,
-  secure: boolean,
+  policy: CookiePolicy,
 ): void {
-  res.cookie(REFRESH_COOKIE[audience].name, token, options(audience, secure, maxAgeMs));
+  res.cookie(REFRESH_COOKIE[audience].name, token, options(audience, policy, maxAgeMs));
 }
 
-export function clearRefreshCookie(res: Response, audience: Audience, secure: boolean): void {
-  res.clearCookie(REFRESH_COOKIE[audience].name, options(audience, secure));
+export function clearRefreshCookie(res: Response, audience: Audience, policy: CookiePolicy): void {
+  res.clearCookie(REFRESH_COOKIE[audience].name, options(audience, policy));
 }
 
 export function readRefreshCookie(req: Request, audience: Audience): string | null {

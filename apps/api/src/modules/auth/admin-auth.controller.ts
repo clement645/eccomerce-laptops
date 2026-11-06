@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { ApiEnv } from '@repo/configuration';
+import { cookiePolicy, type CookiePolicy } from '../../common/http/cookie-policy.js';
 import type {
   AdminAuthResponse,
   AdminLoginChallenge,
@@ -39,7 +40,7 @@ import { SessionService } from './session.service.js';
 @ApiTags('admin-auth')
 @Controller('admin/auth')
 export class AdminAuthController {
-  private readonly secureCookies: boolean;
+  private readonly cookies: CookiePolicy;
 
   constructor(
     private readonly auth: AdminAuthService,
@@ -47,7 +48,7 @@ export class AdminAuthController {
     private readonly audit: AuditService,
     @Inject(API_ENV) env: ApiEnv,
   ) {
-    this.secureCookies = env.NODE_ENV === 'production';
+    this.cookies = cookiePolicy(env);
   }
 
   /** Step 1: password. Returns a short-lived challenge for two-factor; never a session. */
@@ -81,13 +82,7 @@ export class AdminAuthController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<AdminAuthResponse> {
     const { response, issued } = await this.auth.mfaVerify(body, req);
-    setRefreshCookie(
-      res,
-      'admin',
-      issued.refreshToken,
-      this.sessions.ttlMs('admin'),
-      this.secureCookies,
-    );
+    setRefreshCookie(res, 'admin', issued.refreshToken, this.sessions.ttlMs('admin'), this.cookies);
     return response;
   }
 
@@ -109,12 +104,11 @@ export class AdminAuthController {
         'admin',
         issued.refreshToken,
         issued.session.expiresAt.getTime() - Date.now(),
-        this.secureCookies,
+        this.cookies,
       );
       return response;
     } catch (error) {
-      if (error instanceof UnauthorizedException)
-        clearRefreshCookie(res, 'admin', this.secureCookies);
+      if (error instanceof UnauthorizedException) clearRefreshCookie(res, 'admin', this.cookies);
       throw error;
     }
   }
@@ -135,7 +129,7 @@ export class AdminAuthController {
           request: req,
         });
     }
-    clearRefreshCookie(res, 'admin', this.secureCookies);
+    clearRefreshCookie(res, 'admin', this.cookies);
   }
 
   @Get('me')

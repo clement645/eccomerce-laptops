@@ -22,6 +22,8 @@ The blueprint is [render.yaml](../render.yaml): one free web service and nothing
 
 If a background worker `eccomerce-laptops-worker` was created from an earlier version of the blueprint, delete it in the Render dashboard; it is no longer needed (and was the only paid part).
 
+**Cookies across sites.** The admin and storefront (`netlify.app`) and the API (`onrender.com`) are different sites, so the blueprint sets `CROSS_SITE_COOKIES=true`. Without it browsers drop the sign-in and cart cookies, and staff are signed out on every reload. Cross-site request protection still comes from the exact-`Origin` and `X-Requested-With` checks on every cookie endpoint. Safari may still drop these cookies (see KNOWN-ISSUES); the full fix is your own domain, with `admin.`, `api.` and `www.` under it, and then `CROSS_SITE_COOKIES=false`.
+
 If Render gives the web service a different address (for example because the name is taken), update `API_PUBLIC_URL`, rebuild both frontends with the new `NEXT_PUBLIC_API_URL` / `VITE_API_URL`, and change `connect-src` in `apps/admin/public/_headers`.
 
 ### Health checks

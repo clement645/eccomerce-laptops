@@ -70,6 +70,16 @@ export const apiEnvSchema = z
     JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().min(60).max(3_600).default(600),
     REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
     ADMIN_SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(24).default(12),
+    /**
+     * The API is on a different site from the storefront and admin (e.g. onrender.com vs
+     * netlify.app): send the session and cart cookies as SameSite=None; Secure; Partitioned, or
+     * browsers drop them. Turn off once all apps share one domain (then Strict/Lax apply again).
+     * CSRF stays blocked by the exact-Origin and X-Requested-With checks. Production (https) only.
+     */
+    CROSS_SITE_COOKIES: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((v) => v === 'true'),
     /** 32-byte key (base64) used to encrypt TOTP secrets with AES-256-GCM. */
     MFA_ENCRYPTION_KEY: z
       .string()

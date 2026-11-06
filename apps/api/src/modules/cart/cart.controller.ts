@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { ApiEnv } from '@repo/configuration';
+import { cookiePolicy, type CookiePolicy } from '../../common/http/cookie-policy.js';
 import type { Cart } from '@repo/shared-types';
 import { addCartItemSchema, updateCartItemSchema, type AddCartItemInput } from '@repo/validation';
 import type { Request, Response } from 'express';
@@ -38,13 +39,13 @@ const variantId = new ParseUUIDPipe({ version: '7' });
 @OptionalAuth()
 @Controller('cart')
 export class CartController {
-  private readonly secure: boolean;
+  private readonly cookies: CookiePolicy;
 
   constructor(
     private readonly carts: CartService,
     @Inject(API_ENV) env: ApiEnv,
   ) {
-    this.secure = env.NODE_ENV === 'production';
+    this.cookies = cookiePolicy(env);
   }
 
   @Get()
@@ -109,8 +110,8 @@ export class CartController {
       { userId: auth?.userId ?? null, guestToken: readGuestCartToken(req) },
       create,
     );
-    if (resolved.issueGuestToken) writeGuestCartToken(res, resolved.issueGuestToken, this.secure);
-    if (resolved.clearGuestToken) clearGuestCartToken(res, this.secure);
+    if (resolved.issueGuestToken) writeGuestCartToken(res, resolved.issueGuestToken, this.cookies);
+    if (resolved.clearGuestToken) clearGuestCartToken(res, this.cookies);
     return resolved;
   }
 }

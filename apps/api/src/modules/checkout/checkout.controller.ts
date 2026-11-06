@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiHeader, ApiTags } from '@nestjs/swagger';
 import type { ApiEnv } from '@repo/configuration';
+import { cookiePolicy, type CookiePolicy } from '../../common/http/cookie-policy.js';
 import type { CheckoutQuote, OrderDetail, PlaceOrderResponse } from '@repo/shared-types';
 import {
   checkoutQuoteSchema,
@@ -41,13 +42,13 @@ import { CheckoutService } from './checkout.service.js';
 @OptionalAuth()
 @Controller('checkout')
 export class CheckoutController {
-  private readonly secure: boolean;
+  private readonly cookies: CookiePolicy;
 
   constructor(
     private readonly checkout: CheckoutService,
     @Inject(API_ENV) env: ApiEnv,
   ) {
-    this.secure = env.NODE_ENV === 'production';
+    this.cookies = cookiePolicy(env);
   }
 
   /** Delivery options, payment methods and totals for the current cart and address. Reserves nothing. */
@@ -92,7 +93,7 @@ export class CheckoutController {
       key,
     );
     // The guest cart is now an order; start fresh next time.
-    if (!auth) clearGuestCartToken(res, this.secure);
+    if (!auth) clearGuestCartToken(res, this.cookies);
     this.applyCookie(res, resolved);
     return result;
   }
@@ -123,6 +124,6 @@ export class CheckoutController {
   }
 
   private applyCookie(res: Response, resolved: ResolvedCart): void {
-    if (resolved.clearGuestToken) clearGuestCartToken(res, this.secure);
+    if (resolved.clearGuestToken) clearGuestCartToken(res, this.cookies);
   }
 }

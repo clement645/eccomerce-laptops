@@ -37,6 +37,11 @@ services:
         value: https://eccomerce-laptops.netlify.app,https://eccomerce-laptops-admin.netlify.app
       - key: STOREFRONT_REVALIDATE_URL
         value: https://eccomerce-laptops.netlify.app/api/revalidate
+      # The admin and storefront (netlify.app) are a different site from this API (onrender.com):
+      # without this, browsers drop the session and cart cookies and staff are signed out at once.
+      # Set to 'false' once everything is on one domain (admin.example.co.ke, api.example.co.ke).
+      - key: CROSS_SITE_COOKIES
+        value: 'true'
       # One small process: a few connections are enough (Neon's pooler does the rest).
       - key: DATABASE_POOL_MAX
         value: '3'
